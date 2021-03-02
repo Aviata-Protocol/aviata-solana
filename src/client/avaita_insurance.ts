@@ -32,26 +32,29 @@ let connection: Connection;
 /**
  * Connection to the network
  */
-let payerAccount: Account;
+let userAccount: Account;
 
 /**
- * Hello world's program id
+ * Aviata insurance's program id
  */
 let programId: PublicKey;
 
 /**
- * The public key of the account we are saying hello to
+ * The public key of the Aviata account
  */
-let greetedPubkey: PublicKey;
+let aviataPubkey: PublicKey;
 
-const pathToProgram = 'dist/program/helloworld.so';
+const pathToProgram = 'dist/program/avaitainsurance.so';
 
 /**
- * Layout of the greeted account data
+ * Layout of the aviata account data
  */
-const greetedAccountDataLayout = BufferLayout.struct([
-  BufferLayout.u32('numGreets'),
+const aviataAccountDataLayout = BufferLayout.struct([
+  BufferLayout.u32('numOfFlightsInsured'),
 ]);
+
+let insurancePackagePrice: number;
+let insurancePackageRefund: number;
 
 /**
  * Establish a connection to the cluster
@@ -63,10 +66,23 @@ export async function establishConnection(): Promise<void> {
 }
 
 /**
- * Establish an account to pay for everything
+ * Transfer lamports to Sol.
  */
-export async function establishPayer(): Promise<void> {
-  if (!payerAccount) {
+function lamportsToSol(lamports: number) {
+  return lamports / LAMPORTS_PER_SOL
+}
+
+export function selectInsurancePackage(insurancePrice:number, refundAmount: number) {
+  console.log("Insurance Plan: Price = ", insurancePrice, "Sol. Refund = ", refundAmount, "Sol");
+  insurancePackagePrice = insurancePrice * LAMPORTS_PER_SOL;
+  insurancePackageRefund = refundAmount * LAMPORTS_PER_SOL;
+}
+
+/**
+ * Establish an account to pay for insurance
+ */
+export async function establishUser(): Promise<void> {
+  if (!userAccount) {
     let fees = 0;
     const {feeCalculator} = await connection.getRecentBlockhash();
 
@@ -78,30 +94,34 @@ export async function establishPayer(): Promise<void> {
         (BpfLoader.getMinNumSignatures(data.length) + NUM_RETRIES) +
       (await connection.getMinimumBalanceForRentExemption(data.length));
 
-    // Calculate the cost to fund the greeter account
+    // Calculate the cost to fund the aviata account
     fees += await connection.getMinimumBalanceForRentExemption(
-      greetedAccountDataLayout.span,
+      aviataAccountDataLayout.span,
     );
-
+    fees += insurancePackagePrice;
+    
     // Calculate the cost of sending the transactions
     fees += feeCalculator.lamportsPerSignature * 100; // wag
-
-    // Fund a new payer via airdrop
-    payerAccount = await newAccountWithLamports(connection, fees);
+    
+    // Create new account which will insure a flight
+    userAccount = await newAccountWithLamports(connection, fees);
   }
 
-  const lamports = await connection.getBalance(payerAccount.publicKey);
+  const lamports = await connection.getBalance(userAccount.publicKey);
   console.log(
     'Using account',
-    payerAccount.publicKey.toBase58(),
+    userAccount.publicKey.toBase58(),
     'containing',
     lamports / LAMPORTS_PER_SOL,
-    'Sol to pay for fees',
+    'Sol to pay for fees and insurenace',
+    '(=',
+    lamports,
+    'lamports)'
   );
 }
 
 /**
- * Load the hello world BPF program if not already loaded
+ * Load the aviata insurance BPF program if not already loaded
  */
 export async function loadProgram(): Promise<void> {
   const store = new Store();
@@ -110,7 +130,7 @@ export async function loadProgram(): Promise<void> {
   try {
     const config = await store.load('config.json');
     programId = new PublicKey(config.programId);
-    greetedPubkey = new PublicKey(config.greetedPubkey);
+    aviataPubkey = new PublicKey(config.greetedPubkey);
     await connection.getAccountInfo(programId);
     console.log('Program already loaded to account', programId.toBase58());
     return;
@@ -119,12 +139,12 @@ export async function loadProgram(): Promise<void> {
   }
 
   // Load the program
-  console.log('Loading hello world program...');
+  console.log('Loading aviata insurance program...');
   const data = await fs.readFile(pathToProgram);
   const programAccount = new Account();
   await BpfLoader.load(
     connection,
-    payerAccount,
+    userAccount,
     programAccount,
     data,
     BPF_LOADER_PROGRAM_ID,
@@ -132,18 +152,19 @@ export async function loadProgram(): Promise<void> {
   programId = programAccount.publicKey;
   console.log('Program loaded to account', programId.toBase58());
 
-  // Create the greeted account
-  const greetedAccount = new Account();
-  greetedPubkey = greetedAccount.publicKey;
-  console.log('Creating account', greetedPubkey.toBase58(), 'to say hello to');
-  const space = greetedAccountDataLayout.span;
-  const lamports = await connection.getMinimumBalanceForRentExemption(
-    greetedAccountDataLayout.span,
+  // Create the aviata account
+  const aviataAccount = new Account();
+  aviataPubkey = aviataAccount.publicKey;
+  console.log('Creating aviata account', aviataPubkey.toBase58(), 'to receive transaction');
+  const space = aviataAccountDataLayout.span;
+  let lamports = await connection.getMinimumBalanceForRentExemption(
+    aviataAccountDataLayout.span,
   );
+  lamports += insurancePackagePrice;
   const transaction = new Transaction().add(
     SystemProgram.createAccount({
-      fromPubkey: payerAccount.publicKey,
-      newAccountPubkey: greetedPubkey,
+      fromPubkey: userAccount.publicKey,
+      newAccountPubkey: aviataPubkey,
       lamports,
       space,
       programId,
@@ -152,7 +173,7 @@ export async function loadProgram(): Promise<void> {
   await sendAndConfirmTransaction(
     connection,
     transaction,
-    [payerAccount, greetedAccount],
+    [userAccount, aviataAccount],
     {
       commitment: 'singleGossip',
       preflightCommitment: 'singleGossip',
@@ -163,24 +184,24 @@ export async function loadProgram(): Promise<void> {
   await store.save('config.json', {
     url: urlTls,
     programId: programId.toBase58(),
-    greetedPubkey: greetedPubkey.toBase58(),
+    aviataPubkey: aviataPubkey.toBase58(),
   });
 }
 
 /**
- * Say hello
+ * Insure a flight
  */
-export async function sayHello(): Promise<void> {
-  console.log('Saying hello to', greetedPubkey.toBase58());
+export async function insureFlight(flightNumber: string): Promise<void> {
+  console.log('Insuring a flight ', flightNumber);
   const instruction = new TransactionInstruction({
-    keys: [{pubkey: greetedPubkey, isSigner: false, isWritable: true}],
+    keys: [{pubkey: aviataPubkey, isSigner: false, isWritable: true}],
     programId,
     data: Buffer.alloc(0), // All instructions are hellos
   });
   await sendAndConfirmTransaction(
     connection,
     new Transaction().add(instruction),
-    [payerAccount],
+    [userAccount],
     {
       commitment: 'singleGossip',
       preflightCommitment: 'singleGossip',
@@ -189,18 +210,39 @@ export async function sayHello(): Promise<void> {
 }
 
 /**
+ * Report statistics and final balances of user and aviata
+ */
+export async function reportStatistics(): Promise<void> {
+  const accountInfo = await connection.getAccountInfo(aviataPubkey);
+  if (accountInfo === null) {
+    throw 'Error: cannot find the aviata account';
+  }
+  const info = aviataAccountDataLayout.decode(Buffer.from(accountInfo.data));
+  console.log(
+    'Total of ',
+    info.numOfFlightsInsured.toString(),
+    'flights have been insured on Aviata',
+  );
+  console.log(
+    'User balance in the end',
+    lamportsToSol(await connection.getBalance(userAccount.publicKey)),
+    ' Sol'
+  );
+  console.log(
+    'aviata balance in the end ',
+    lamportsToSol(await connection.getBalance(aviataPubkey)),
+    'Sol'
+  );
+  console.log(
+    'Total transaction fees ',
+    lamportsToSol(await connection.getBalance(programId)),
+    'Sol'
+    );
+}
+
+/**
  * Report the number of times the greeted account has been said hello to
  */
-export async function reportHellos(): Promise<void> {
-  const accountInfo = await connection.getAccountInfo(greetedPubkey);
-  if (accountInfo === null) {
-    throw 'Error: cannot find the greeted account';
-  }
-  const info = greetedAccountDataLayout.decode(Buffer.from(accountInfo.data));
-  console.log(
-    greetedPubkey.toBase58(),
-    'has been greeted',
-    info.numGreets.toString(),
-    'times',
-  );
+export async function reportUserBalance(): Promise<void> {
+  console.log('user balance in the beggining', lamportsToSol(await connection.getBalance(userAccount.publicKey)));
 }

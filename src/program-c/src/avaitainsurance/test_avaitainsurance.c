@@ -1,4 +1,4 @@
-#include "helloworld.c"
+#include "avaitainsurance.c"
 #include <criterion/criterion.h>
 
 Test(hello, sanity) {
@@ -26,8 +26,8 @@ Test(hello, sanity) {
                           sizeof(instruction_data), &program_id};
 
   cr_assert(0 == *(uint32_t *)data);
-  cr_assert(SUCCESS == helloworld(&params));
+  cr_assert(SUCCESS == avaitainsurance(&params));
   cr_assert(1 == *(uint32_t *)data);
-  cr_assert(SUCCESS == helloworld(&params));
+  cr_assert(SUCCESS == avaitainsurance(&params));
   cr_assert(2 == *(uint32_t *)data);
 }

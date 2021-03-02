@@ -1,32 +1,41 @@
 /**
- * Hello world
+ * Aviata Insurance
  */
 
 import {
   establishConnection,
-  establishPayer,
+  establishUser,
   loadProgram,
-  sayHello,
-  reportHellos,
-} from './hello_world';
+  insureFlight,
+  reportStatistics,
+  reportUserBalance,
+  selectInsurancePackage,
+} from './avaita_insurance';
 
 async function main() {
-  console.log("Let's say hello to a Solana account...");
+  console.log("Insure a flight for user using Solana account...");
 
   // Establish connection to the cluster
   await establishConnection();
 
-  // Determine who pays for the fees
-  await establishPayer();
+  // Select insurance package - price = 1 Sol, refund = 10 Sol
+  await selectInsurancePackage(1, 10);
+
+  // Determine who is insuring the flight
+  await establishUser();
+  
+  // Report user balance before insuring a flight
+  await reportUserBalance();
 
   // Load the program if not already loaded
   await loadProgram();
 
-  // Say hello to an account
-  await sayHello();
+  // Insure a flight
+  const flightNumber="AA123456";
+  await insureFlight(flightNumber);
 
-  // Find out how many times that account has been greeted
-  await reportHellos();
+  // Find out how many times flights have been insured on Aviata
+  await reportStatistics();
 
   console.log('Success');
 }
